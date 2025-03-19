@@ -32,10 +32,10 @@ def get_accounts_by_user(user_id):
     conn.close()
     return accounts
 
-def get_transactions_by_user(user_id):
+def get_transactions_by_account(account_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM transactions WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT * FROM transactions WHERE account_id = ?', (account_id,))
     transactions = cursor.fetchall()
     conn.close()
     return transactions
@@ -106,6 +106,15 @@ def get_all_savings(user_id):
     savings = get_savings_by_user(user_id)
     user_data = {
         "savings": [dict(saving) for saving in savings],
+    }
+    return jsonify(user_data)
+
+@app.route('/api/users/<int:account_id>/transactions', methods=['GET'])
+def get_all_transactions(account_id):
+
+    transactions = get_transactions_by_account(account_id)
+    user_data = {
+        "transactions": [dict(transaction) for transaction in transactions],
     }
     return jsonify(user_data)
 
