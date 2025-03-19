@@ -97,6 +97,18 @@ def get_all_accounts(user_id):
     }
     return jsonify(user_data)
 
+@app.route('/api/users/<int:user_id>/savings', methods=['GET'])
+def get_all_savings(user_id):
+    user = get_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    savings = get_savings_by_user(user_id)
+    user_data = {
+        "savings": [dict(saving) for saving in savings],
+    }
+    return jsonify(user_data)
+
 @app.route('/api/users/login/', methods=['POST'])
 def login():
     data = request.get_json()
