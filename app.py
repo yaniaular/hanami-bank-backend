@@ -243,6 +243,106 @@ def transfer():
     finally:
         conn.close()
 
+@app.route('/api/savings', methods=['POST'])
+def create_saving():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    name = data.get('name')
+    amount = data.get('amount')
+
+    if not all([user_id, name, amount]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO saving (user_id, name, amount)
+            VALUES (?, ?, ?)
+        ''', (user_id, name, amount))
+        conn.commit()
+        return jsonify({"message": "Saving created successfully"}), 201
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/savings/transaction', methods=['POST'])
+def saving_transaction():
+    data = request.get_json()
+    saving_id = data.get('saving_id')
+    account_id = data.get('account_id')
+    amount = data.get('amount')
+
+    if not all([saving_id, account_id, amount]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        conn.execute('BEGIN TRANSACTION')
+
+        # 1. Get current balances
+        cursor.execute('SELECT user_id, balance FROM account WHERE id = ?', (account_id,))
+        account = cursor.fetchone()
+        if not account:
+            conn.rollback()
+            return jsonify({"error": "Account not found"}), 404
+
+        cursor.execute('SELECT amount FROM saving WHERE id = ?', (saving_id,))
+        saving = cursor.fetchone()
+        if not saving:
+            conn.rollback()
+            return jsonify({"error": "Saving not found"}), 404
+
+        # 2. Validate withdrawal (if amount is negative)
+        new_account_balance = account['balance'] - amount
+        new_saving_balance = saving['amount'] + amount
+
+        if new_account_balance < 0:
+            conn.rollback()
+            return jsonify({"error": "Insufficient funds in account"}), 400
+
+        if new_saving_balance < 0:
+            conn.rollback()
+            return jsonify({"error": "Insufficient funds in saving"}), 400
+
+        # 3. Update balances
+        cursor.execute('UPDATE account SET balance = ? WHERE id = ?',
+                      (new_account_balance, account_id))
+        cursor.execute('UPDATE saving SET amount = ? WHERE id = ?',
+                      (new_saving_balance, saving_id))
+
+        # 4. Record transaction
+        transaction_type = "deposit_to_saving" if amount > 0 else "withdraw_from_saving"
+        cursor.execute('''
+            INSERT INTO transactions
+            (account_id, user_id, type, amount, description, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        ''', (
+            account_id,
+            account["user_id"],
+            transaction_type,
+            -amount,  # Negative for account, positive for saving
+            f"{saving_id} {transaction_type} {abs(amount)}"
+        ))
+
+        conn.commit()
+        return jsonify({
+            "message": "Transaction completed",
+            "new_account_balance": new_account_balance,
+            "new_saving_balance": new_saving_balance
+        })
+
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 @app.route('/api/users/login/', methods=['POST'])
 def login():
     data = request.get_json()
