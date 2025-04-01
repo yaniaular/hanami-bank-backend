@@ -142,6 +142,107 @@ def get_all_transactions(account_id):
     }
     return jsonify(user_data)
 
+@app.route('/api/transfers', methods=['POST'])
+def transfer():
+    # Get request data
+    data = request.get_json()
+
+    # Validate required fields
+    required_fields = ['source_account_number', 'destination_account_number', 'amount']
+    if not all(field in data for field in required_fields):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    try:
+        source_account_number = str(data['source_account_number'])
+        destination_account_number = str(data['destination_account_number'])
+        amount = float(data['amount'])
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid data format"}), 400
+
+    if amount <= 0:
+        return jsonify({"error": "Amount must be positive"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        # Begin transaction
+        conn.execute('BEGIN TRANSACTION')
+
+        # 1. Verify accounts exist and get their details
+        cursor.execute('SELECT id, balance, user_id FROM account WHERE account_number = ?',
+                      (source_account_number,))
+        source_account = cursor.fetchone()
+        if not source_account:
+            conn.rollback()
+            return jsonify({"error": "Source account not found"}), 404
+
+        cursor.execute('SELECT id, balance, user_id FROM account WHERE account_number = ?',
+                      (destination_account_number,))
+        destination_account = cursor.fetchone()
+        if not destination_account:
+            conn.rollback()
+            return jsonify({"error": "Destination account not found"}), 404
+
+        # 2. Check sufficient funds
+        if source_account['balance'] < amount:
+            conn.rollback()
+            return jsonify({"error": "Insufficient funds"}), 400
+
+        # 3. Update balances
+        # Deduct from source account
+        new_source_balance = source_account['balance'] - amount
+        cursor.execute('UPDATE account SET balance = ? WHERE account_number = ?',
+                      (new_source_balance, source_account_number))
+
+        # Add to destination account
+        new_destination_balance = destination_account['balance'] + amount
+        cursor.execute('UPDATE account SET balance = ? WHERE account_number = ?',
+                      (new_destination_balance, destination_account_number))
+
+        # 4. Record transactions
+        cursor.execute('''
+            INSERT INTO transactions
+            (account_id, user_id, type, amount, description, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        ''', (
+            source_account['id'],
+            source_account['user_id'],
+            'transfer_out',
+            -amount,
+            f'Transfer to account {destination_account_number}'
+        ))
+
+        cursor.execute('''
+            INSERT INTO transactions
+            (account_id, user_id, type, amount, description, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        ''', (
+            destination_account['id'],
+            destination_account['user_id'],
+            'transfer_in',
+            amount,
+            f'Transfer from account {source_account_number}'
+        ))
+
+        # Commit transaction
+        conn.commit()
+
+        return jsonify({
+            "message": "Transfer completed successfully",
+            "new_source_balance": new_source_balance,
+            "new_destination_balance": new_destination_balance,
+            "source_account_number": source_account_number,
+            "destination_account_number": destination_account_number
+        })
+
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+    finally:
+        conn.close()
+
 @app.route('/api/users/login/', methods=['POST'])
 def login():
     data = request.get_json()
