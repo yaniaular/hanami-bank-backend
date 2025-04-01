@@ -32,6 +32,14 @@ def get_accounts_by_user(user_id):
     conn.close()
     return accounts
 
+def get_account_by_id(account_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM account WHERE id = ?', (account_id,))
+    account = cursor.fetchone()
+    conn.close()
+    return account
+
 def get_transactions_by_account(account_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -40,11 +48,10 @@ def get_transactions_by_account(account_id):
     conn.close()
     return transactions
 
-
 def get_transactions_by_user(user_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM transactions WHERE user_id = ?', (account_id,))
+    cursor.execute('SELECT * FROM transactions WHERE user_id = ?', (user_id,))
     transactions = cursor.fetchall()
     conn.close()
     return transactions
@@ -74,6 +81,14 @@ def get_user(user_id):
         return jsonify(dict(user))
     else:
         return jsonify({"error": "Usuario no encontrado"}), 404
+
+@app.route('/api/account/<int:account_id>', methods=['GET'])
+def get_account(account_id):
+    account = get_account_by_id(account_id)
+    if account:
+        return jsonify(dict(account))
+    else:
+        return jsonify({"error": "Cuenta no encontrado"}), 404
 
 @app.route('/user-data/<int:user_id>', methods=['GET'])
 def get_user_data(user_id):
