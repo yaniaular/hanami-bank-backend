@@ -40,6 +40,15 @@ def get_transactions_by_account(account_id):
     conn.close()
     return transactions
 
+
+def get_transactions_by_user(user_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM transactions WHERE user_id = ?', (account_id,))
+    transactions = cursor.fetchall()
+    conn.close()
+    return transactions
+
 def get_savings_by_user(user_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -109,7 +118,7 @@ def get_all_savings(user_id):
     }
     return jsonify(user_data)
 
-@app.route('/api/users/<int:account_id>/transactions', methods=['GET'])
+@app.route('/api/accounts/<int:account_id>/transactions', methods=['GET'])
 def get_all_transactions(account_id):
 
     transactions = get_transactions_by_account(account_id)
